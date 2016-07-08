@@ -1015,9 +1015,9 @@ NSString* const SocketIOException = @"SocketIOException";
         //...0{"sid":"<sid>","upgrades":[<transports>,...],"pingInterval":<timeHeartbeat>,"pingTimeout":<timeOut>}
         if([responseString rangeOfString:@"{"].location != NSNotFound)
             responseString = [responseString substringFromIndex:[responseString rangeOfString:@"{"].location];
-        if([responseString rangeOfString:@"}]" options:NSBackwardsSearch].location != NSNotFound) {
+        if([responseString rangeOfString:@"}" options:NSBackwardsSearch].location != NSNotFound) {
             long endIndex = [responseString rangeOfString:@"}" options:NSBackwardsSearch].location;
-            responseString = [responseString substringFromIndex:endIndex+1];
+            responseString = [responseString substringToIndex:endIndex+1];
         }
         
         DEBUGLOG(@"Response %@", responseString);
