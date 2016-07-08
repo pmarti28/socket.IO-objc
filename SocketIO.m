@@ -21,6 +21,8 @@
 #import "SocketIO.h"
 #import "SocketIOPacket.h"
 #import "SocketIOJSONSerialization.h"
+#import "SocketIOTransportWebSocket.h"
+#import "SocketIOTransportXHR.h"
 
 #ifdef DEBUG
 #define DEBUG_LOGS 1
@@ -983,10 +985,10 @@ NSString* const SocketIOException = @"SocketIOException";
             static Class xhrTransportClass;
             
             if (webSocketTransportClass == nil) {
-                webSocketTransportClass = NSClassFromString(@"SocketIOTransportWebsocket");
+                webSocketTransportClass = [SocketIOTransportWebsocket class];
             }
             if (xhrTransportClass == nil) {
-                xhrTransportClass = NSClassFromString(@"SocketIOTransportXHR");
+                xhrTransportClass = [SocketIOTransportXHR class];
             }
             
             if (webSocketTransportClass != nil && [transports indexOfObject:@"websocket"] != NSNotFound) {
@@ -1013,6 +1015,11 @@ NSString* const SocketIOException = @"SocketIOException";
         //...0{"sid":"<sid>","upgrades":[<transports>,...],"pingInterval":<timeHeartbeat>,"pingTimeout":<timeOut>}
         if([responseString rangeOfString:@"{"].location != NSNotFound)
             responseString = [responseString substringFromIndex:[responseString rangeOfString:@"{"].location];
+        if([responseString rangeOfString:@"}]" options:NSBackwardsSearch].location != NSNotFound) {
+            long endIndex = [responseString rangeOfString:@"}" options:NSBackwardsSearch].location;
+            responseString = [responseString substringFromIndex:endIndex+1];
+        }
+        
         DEBUGLOG(@"Response %@", responseString);
         connectionFailed = true;
         NSData *utf8Data = [responseString dataUsingEncoding:NSUTF8StringEncoding];
@@ -1033,10 +1040,10 @@ NSString* const SocketIOException = @"SocketIOException";
             static Class xhrTransportClass;
             
             if (webSocketTransportClass == nil) {
-                webSocketTransportClass = NSClassFromString(@"SocketIOTransportWebsocket");
+                webSocketTransportClass = [SocketIOTransportWebsocket class];
             }
             if (xhrTransportClass == nil) {
-                xhrTransportClass = NSClassFromString(@"SocketIOTransportXHR");
+                xhrTransportClass = [SocketIOTransportXHR class];
             }
             
             if (webSocketTransportClass != nil && [transports indexOfObject:@"websocket"] != NSNotFound) {
