@@ -204,7 +204,7 @@
                      @"event",
                      @"ack",
                      @"error",
-                     @"binarevent",
+                     @"binaryevent",
                      @"binaryack",
                      nil];
     return self;

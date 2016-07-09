@@ -64,7 +64,7 @@ static NSString* kSecureSocketPortURL = @"wss://%@:%d/socket.io/1/websocket/%@";
     NSString *format;
     NSString *addOnVersion = delegate.sid;;
     if(version == V10x)
-        addOnVersion = [NSString stringWithFormat:@"?EIO=2&transport=websocket&sid=%@", delegate.sid];
+        addOnVersion = [NSString stringWithFormat:@"?EIO=3&transport=websocket&sid=%@", delegate.sid];
     
     if (delegate.port) {
         format = delegate.useSecure ? kSecureSocketPortURL : kInsecureSocketPortURL;
@@ -96,7 +96,11 @@ static NSString* kSecureSocketPortURL = @"wss://%@:%d/socket.io/1/websocket/%@";
 
 - (void) send:(NSString*)request
 {
-    [_webSocket send:request];
+    NSError *error;
+    [_webSocket sendString:request error:&error];
+    if(error) {
+        NSLog(@"error: %@", error);
+    }
 }
 
 
@@ -114,7 +118,18 @@ static NSString* kSecureSocketPortURL = @"wss://%@:%d/socket.io/1/websocket/%@";
 - (void) webSocketDidOpen:(SRWebSocket *)webSocket
 {
     DEBUGLOG(@"Socket opened.");
-    [_webSocket send:@"5"];
+    NSError *error;
+    // test the webSocket connection
+    [_webSocket sendString:@"2probe" error:&error];
+    if(error) {
+        [_webSocket close];
+    } else {
+        // upgrade the connection
+        [_webSocket sendString:@"5" error:&error];
+        if(error) {
+            NSLog(@"error: %@", error);
+        }
+    }
 }
 
 - (void) webSocket:(SRWebSocket *)webSocket didFailWithError:(NSError *)error
