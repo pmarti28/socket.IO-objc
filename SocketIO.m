@@ -157,6 +157,11 @@ NSString* const SocketIOException = @"SocketIOException";
             [request setAllHTTPHeaderFields:headers];
         }
         
+        if (_customHeaders != nil) {
+            DEBUGLOG(@"Adding custom header(s): %@", [_customHeaders description]);
+            [request setAllHTTPHeaderFields:_customHeaders];
+        }
+        
         [request setHTTPShouldHandleCookies:YES];
         
         _handshake = [[NSURLConnection alloc] initWithRequest:request delegate:self startImmediately:NO];
