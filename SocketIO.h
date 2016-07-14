@@ -63,7 +63,9 @@ typedef enum {
     NSString *_endpoint;
     NSDictionary *_params;
     
-    SocketIOVersion _version;    
+    SocketIOVersion _version;
+    
+    BOOL _V10x_eio_upgraded;
     
     __weak id<SocketIODelegate> _delegate;
     

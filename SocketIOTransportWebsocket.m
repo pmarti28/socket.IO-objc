@@ -62,7 +62,7 @@ static NSString* kSecureSocketPortURL = @"wss://%@:%d/socket.io/1/websocket/%@";
 {
     NSString *urlStr;
     NSString *format;
-    NSString *addOnVersion = delegate.sid;;
+    NSString *addOnVersion = delegate.sid;
     if(version == V10x)
         addOnVersion = [NSString stringWithFormat:@"?EIO=3&transport=websocket&sid=%@", delegate.sid];
     
@@ -103,8 +103,6 @@ static NSString* kSecureSocketPortURL = @"wss://%@:%d/socket.io/1/websocket/%@";
     }
 }
 
-
-
 # pragma mark -
 # pragma mark WebSocket Delegate Methods
 
@@ -117,18 +115,8 @@ static NSString* kSecureSocketPortURL = @"wss://%@:%d/socket.io/1/websocket/%@";
 
 - (void) webSocketDidOpen:(SRWebSocket *)webSocket
 {
-    DEBUGLOG(@"Socket opened.");
-    NSError *error;
-    // test the webSocket connection
-    [_webSocket sendString:@"2probe" error:&error];
-    if(error) {
-        [_webSocket close];
-    } else {
-        // upgrade the connection
-        [_webSocket sendString:@"5" error:&error];
-        if(error) {
-            NSLog(@"error: %@", error);
-        }
+    if([self.delegate respondsToSelector:@selector(onTransportReady)]) {
+        [self.delegate onTransportReady];
     }
 }
 
