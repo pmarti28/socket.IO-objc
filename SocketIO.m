@@ -540,6 +540,7 @@ NSString* const SocketIOException = @"SocketIOException";
 
 - (void) onTransportReady {
     if(_version == V10x) {
+        _V10x_eio_upgraded = NO;
         SocketIOPacket *packet = [SocketIOPacket createPacketWithType:@"heartbeat" version:_version];
         [self send:packet isEeioHandshake:YES];
     }
