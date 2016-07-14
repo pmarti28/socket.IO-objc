@@ -30,6 +30,7 @@ typedef enum SocketIOVersion
 @protocol SocketIOTransportDelegate <NSObject>
 
 - (void) onData:(id)message;
+- (void) onTransportReady;
 - (void) onDisconnect:(NSError*)error;
 - (void) onError:(NSError*)error;
 

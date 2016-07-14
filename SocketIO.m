@@ -93,6 +93,7 @@ NSString* const SocketIOException = @"SocketIOException";
         _ackCount = 0;
         _acks = [[NSMutableDictionary alloc] init];
         _returnAllDataFromAck = NO;
+        _V10x_eio_upgraded = NO;
     }
     return self;
 }
@@ -276,7 +277,6 @@ NSString* const SocketIOException = @"SocketIOException";
                 [array addObject:data];
             }
             packet.data = [SocketIOJSONSerialization JSONStringFromObject:array error:nil];
-            //packet.data = [packet.data stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
         }break;
             
         case V09x:
@@ -341,29 +341,37 @@ NSString* const SocketIOException = @"SocketIOException";
 
 - (void) send:(SocketIOPacket *)packet
 {
-    if (![self isConnected] && ![self isConnecting]) {
-        DEBUGLOG(@"Already disconnected!");
-        return;
-    }
-    DEBUGLOG(@"Prepare to send()");
-    packet.endpoint = _endpoint;
-    
-    NSString *req = [packet toString];
-    if (![_transport isReady]) {
-        DEBUGLOG(@"queue >>> %@", req);
+    [self send:packet isEeioHandshake:NO];
+}
+
+- (void)send:(SocketIOPacket *)packet isEeioHandshake:(BOOL)isEioHandshake {
+    if (_version == V10x && !_V10x_eio_upgraded && !isEioHandshake) {
         [_queue addObject:packet];
-    } 
-    else {
-        DEBUGLOG(@"send() >>> %@", req);
-        [_transport send:req];
+    } else {
+        if (![self isConnected] && ![self isConnecting]) {
+            DEBUGLOG(@"Already disconnected!");
+            return;
+        }
+        DEBUGLOG(@"Prepare to send()");
+        packet.endpoint = _endpoint;
         
-        if ([_delegate respondsToSelector:@selector(socketIO:didSendMessage:)]) {
-            [_delegate socketIO:self didSendMessage:packet];
+        NSString *req = [packet toString];
+        if (![_transport isReady]) {
+            DEBUGLOG(@"queue >>> %@", req);
+            [_queue addObject:packet];
+        }
+        else {
+            DEBUGLOG(@"send() >>> %@", req);
+            [_transport send:req];
+            
+            if ([_delegate respondsToSelector:@selector(socketIO:didSendMessage:)]) {
+                [_delegate socketIO:self didSendMessage:packet];
+            }
         }
     }
 }
 
-- (void) doQueue 
+- (void) doQueue
 {
     DEBUGLOG(@"doQueue() >> %lu", (unsigned long)[_queue count]);
     
@@ -530,6 +538,14 @@ NSString* const SocketIOException = @"SocketIOException";
 #pragma mark -
 #pragma mark SocketIOTransport callbacks
 
+- (void) onTransportReady {
+    if(_version == V10x) {
+        _V10x_eio_upgraded = NO;
+        SocketIOPacket *packet = [SocketIOPacket createPacketWithType:@"heartbeat" version:_version];
+        [self send:packet isEeioHandshake:YES];
+    }
+}
+
 - (void) onData:(NSString *)data
 {
     DEBUGLOG(@"onData %@", data);
@@ -667,25 +683,21 @@ NSString* const SocketIOException = @"SocketIOException";
         }break;
         case V10x:
         {
-            //42<NAMESPACE>["<event>","{}"]
-            //GET VERSION
-            NSUInteger control = [[NSNumber numberWithUnsignedChar:[data characterAtIndex:0]] integerValue]
+            NSUInteger eio_control = [[NSNumber numberWithUnsignedChar:[data characterAtIndex:0]] integerValue]
                                     -[[NSNumber numberWithUnsignedChar:'0'] integerValue];
             
             NSUInteger ack = 0;
-            
-            SocketIOPacket *packet = [[SocketIOPacketV10x alloc] initWithTypeIndex:control];            
-            
+            SocketIOPacket *sio_packet = [[SocketIOPacketV10x alloc] initWithTypeIndex:eio_control];
             //dont care about the endpoint here
-            packet.endpoint = @"";
+            sio_packet.endpoint = @"";
             
             //GET GETDATA
             if(data.length>1)
-                packet.data = [data substringFromIndex:1];
+                sio_packet.data = [data substringFromIndex:1];
             else
-                packet.data = @"";
+                sio_packet.data = @"";
             
-            switch (control)
+            switch (eio_control)
             {
                 case 0:
                     //??
@@ -700,36 +712,38 @@ NSString* const SocketIOException = @"SocketIOException";
                     break;
                 case 3:
                     //Pong
-                    if([data isEqualToString:@"probe"])
-                        [self sendMessage:@"5"];
+                    if([sio_packet.data isEqualToString:@"probe"] && !_V10x_eio_upgraded) {
+                        SocketIOPacket *packet = [SocketIOPacketV10x createPacketWithType:@"upgrade" version:_version];
+                        [self send:packet isEeioHandshake:YES];
+                    }
                     break;
                 case 4:
                 {
                     //Message
-                    control = [[NSNumber numberWithUnsignedChar:[packet.data characterAtIndex:0]] integerValue]
+                    NSUInteger sio_control = [[NSNumber numberWithUnsignedChar:[sio_packet.data characterAtIndex:0]] integerValue]
                                                     -[[NSNumber numberWithUnsignedChar:'0'] integerValue];
-                    if([packet.data length] > 1){
-                        NSRange range = NSMakeRange(1, [packet.data rangeOfString:@"["].location-1);
-                        NSString *ackStr = [packet.data substringWithRange:range];
+                    if([sio_packet.data length] > 1) {
+                        NSRange range = NSMakeRange(1, [sio_packet.data rangeOfString:@"["].location-1);
+                        NSString *ackStr = [sio_packet.data substringWithRange:range];
                         ack = [ackStr integerValue];
                     }
                     //GET ENDPOINT
-                    NSUInteger rendpoint = [packet.data rangeOfString:@"["].location;
+                    NSUInteger rendpoint = [sio_packet.data rangeOfString:@"["].location;
                     if(rendpoint == NSNotFound)
-                        packet.endpoint = packet.data;
+                        sio_packet.endpoint = sio_packet.data;
                     else
-                        packet.endpoint = [packet.data substringToIndex:rendpoint];
+                        sio_packet.endpoint = [sio_packet.data substringToIndex:rendpoint];
                     
                     //GET GETDATA
                     if(rendpoint == NSNotFound)
-                        packet.data = @"";
+                        sio_packet.data = @"";
                     else
-                        packet.data = [packet.data substringFromIndex:rendpoint];
+                        sio_packet.data = [sio_packet.data substringFromIndex:rendpoint];
                     
-                    switch (control) {
+                    switch (sio_control) {
                         case 0:
                             //Connected
-                            [self onConnect:packet];
+                            [self onConnect:sio_packet];
                             break;
                         case 1:
                             //Disconnected
@@ -740,25 +754,25 @@ NSString* const SocketIOException = @"SocketIOException";
                         case 2:
                         {
                             //Event
-                            if([packet.data characterAtIndex:0] == '[' && [packet.data characterAtIndex:packet.data.length-1] == ']')
+                            if([sio_packet.data characterAtIndex:0] == '[' && [sio_packet.data characterAtIndex:sio_packet.data.length-1] == ']')
                             {
-                                NSData *utf8Data = [packet.data dataUsingEncoding:NSUTF8StringEncoding];
+                                NSData *utf8Data = [sio_packet.data dataUsingEncoding:NSUTF8StringEncoding];
                                 NSArray *parsedData = [SocketIOJSONSerialization objectFromJSONData:utf8Data error:nil];
                                 DEBUGLOG(@"Event Type:%@",parsedData[0]);
-                                packet.name = parsedData[0];
-                                packet.args = [parsedData subarrayWithRange:NSMakeRange(1, parsedData.count-1)];
-                                if([packet.name isEqualToString:@"message"])
+                                sio_packet.name = parsedData[0];
+                                sio_packet.args = [parsedData subarrayWithRange:NSMakeRange(1, parsedData.count-1)];
+                                if([sio_packet.name isEqualToString:@"message"])
                                 {
                                     // data is specified as NSString, so rewrap it...
-                                    packet.data = [SocketIOJSONSerialization JSONStringFromObject:packet.args[0] error:nil];
+                                    sio_packet.data = [SocketIOJSONSerialization JSONStringFromObject:sio_packet.args[0] error:nil];
                                     if ([_delegate respondsToSelector:@selector(socketIO:didReceiveMessage:)]) {
-                                        [_delegate socketIO:self didReceiveMessage:packet];
+                                        [_delegate socketIO:self didReceiveMessage:sio_packet];
                                     }
                                 }
                                 else
                                 {
                                     if ([_delegate respondsToSelector:@selector(socketIO:didReceiveEvent:)]) {
-                                        [_delegate socketIO:self didReceiveEvent:packet];
+                                        [_delegate socketIO:self didReceiveEvent:sio_packet];
                                     }
                                 }
                                 
@@ -771,15 +785,11 @@ NSString* const SocketIOException = @"SocketIOException";
                                 NSUInteger ackId = ack;
                                 DEBUGLOG(@"ack id found: %d", (unsigned int)ackId);
                                 
-                                NSString *argsStr = [packet.data substringFromIndex:1 ];
+                                NSString *argsStr = [sio_packet.data substringFromIndex:1 ];
                                 argsStr = [argsStr substringToIndex:argsStr.length-1];
                                 id argsData = nil;
                                 if (argsStr && ![argsStr isEqualToString:@""]) {
                                     argsData = [SocketIOJSONSerialization objectFromJSONData:[argsStr dataUsingEncoding:NSUTF8StringEncoding] error:nil];
-                                    // either send complete response or only the first arg to callback
-//                                    if (!_returnAllDataFromAck && [argsData count] > 0) {
-//                                        argsData = [argsData objectAtIndex:0];
-//                                    }
                                 }
                                 
                                 // get selector for ackId
@@ -811,7 +821,8 @@ NSString* const SocketIOException = @"SocketIOException";
                     //Upgrade Required
                     break;
                 case 6:
-                    //Noop
+                    _V10x_eio_upgraded = YES;
+                    [self doQueue];
                     break;
                     
                 default:
@@ -820,7 +831,7 @@ NSString* const SocketIOException = @"SocketIOException";
             
         }break;
     }
-    }
+}
 
 - (void) onDisconnect:(NSError *)error
 {
